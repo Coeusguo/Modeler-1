@@ -178,9 +178,40 @@ void Camera::applyViewingTransform() {
 
 	// Place the camera at mPosition, aim the camera at
 	// mLookAt, and twist the camera such that mUpVector is up
+	
+	/*
 	gluLookAt(	mPosition[0], mPosition[1], mPosition[2],
 				mLookAt[0],   mLookAt[1],   mLookAt[2],
 				mUpVector[0], mUpVector[1], mUpVector[2]);
+	*/
+	
+	lookAt(mPosition, mLookAt, mUpVector);
+}
+
+void Camera::lookAt(Vec3f eye, Vec3f at, Vec3f up) {
+	// modified from https://www.khronos.org/opengl/wiki/GluLookAt_code
+	float matrix[16];
+
+	Vec3f forward = at - eye;
+	forward.normalize();
+
+	// side = forward X up
+	up.normalize(); // need to normalize first (forward has been normalized above already)
+	Vec3f side = forward ^ up;
+	side.normalize();
+
+	//recompute up (side X forward)
+	Vec3f newUp = side ^ forward;
+	newUp.normalize();
+
+	Mat4f matrix2(side[0], side[1], side[2], 0.0,
+						newUp[0], newUp[1], newUp[2], 0.0,
+						-forward[0], -forward[1], -forward[2], 0.0,
+						0.0, 0.0, 0.0, 1.0);
+	
+	matrix2.getGLMatrix(matrix);
+	glMultMatrixf(matrix);
+	glTranslated(-eye[0], -eye[1], -eye[2]);
 }
 
 #pragma warning(pop)
