@@ -7,27 +7,44 @@
 #include "InverseKinematics.h"
 #include "modelerglobals.h"
 #include "Metaball.h"
+#include "mat.h"
+#include "modelerui.h"
 #include <iostream>
 #include <vector>
 using namespace std;
 
-// To make a SampleModel, we inherit off of ModelerView
+// To make a SampleModel, we inherit off of 
 class MyModel : public ModelerView
 {
 private:
 	vector<Metaball> metaballs;
 	InverseKinematics2* rightArm;
 	InverseKinematics2* rightLeg;
+	int angle;
+	bool isAnimationOn;
+	int delta = 5;
+
+	int textureWidth ;
+	int textureHeight ;
+	GLuint textureName;
+	GLubyte texture[256][256][4];
+	bool isTextureLoaded;
+
 	Vec3f * calculateNewDir(Vec3f newDir, Vec3f lastDir);
 	void recursionTree3D(Vec3f dir, Vec3f nextdir, Vec3f currentLocationint, float length);
+	void changeAnimationAngle();
 public:
 	MyModel(int x, int y, int w, int h, char *label)
 		: ModelerView(x, y, w, h, label) {
 		initMetaball();
+		
 		Vec3f rightPoint1(-1.2, 5.4, 0);
 		Vec3f rightPoint2(-0.8, 3.2, 0);
 		rightArm = new InverseKinematics2(rightPoint1, 1.0, 1.0);
 		rightLeg = new InverseKinematics2(rightPoint2, 1.5, 1.7);
+		angle = 0;
+		isAnimationOn = false;
+		isTextureLoaded = false;
 	}
 	float* getRotateAngles(Vec3f target);//input an target vector,the funtion will return 2 float value,first is rotate from z coord about x,and second value is rotate about y
 
@@ -39,12 +56,15 @@ public:
 	void drawHead();//including neck
 	void drawUpperTorso();//including shoulder
 	void drawLowerTorso();//pelvis
-	
+	void drawGatling();
+	void drawHandGun();
 	void initRecurtionTree();
 	void initMetaball();
 	void drawTorus();
-
+	void drwaComplexShape();
 	void demo();
+	void initTexture();
+	void drawTexture();
 };
 
 // We need to make a creator function, mostly because of
@@ -59,13 +79,28 @@ ModelerView* createSampleModel(int x, int y, int w, int h, char *label)
 // method of ModelerView to draw out SampleModel
 void MyModel::draw()
 {
+	
 	// This call takes care of a lot of the nasty projection 
 	// matrix stuff.  Unless you want to fudge directly with the 
 	// projection matrix, don't bother with this ...
 	Vec4f result1(0, 0, 0, 0);
 	Vec4f result2(0, 0, 0, 0);
 	ModelerView::draw();
-
+	//change light source position
+	if (VAL(TURNONLIGHT)) {
+		GLfloat pos[4];
+		pos[0] = VAL(LIGHTX);
+		pos[1] = VAL(LIGHTY);
+		pos[2] = VAL(LIGHTZ);
+		pos[3] = 0.0f;
+		glLightfv(GL_LIGHT1, GL_POSITION, pos);
+		glPushMatrix();
+		glTranslated(VAL(LIGHTX), VAL(LIGHTY), VAL(LIGHTZ));
+		setDiffuseColor(1.0f, 1.0f, 1.0f);
+		drawBox(0.2, 0.2, 0.2);
+		glPopMatrix();
+		setDiffuseColor(COLOR_GREEN);
+	}
 	if (VAL(ENABLEIKARM)) {
 		Vec3f destination(VAL(IKXARM), VAL(IKYARM), VAL(IKZARM));
 		//cout << VAL(IKX) <<","<< VAL(IKY) << ","<< VAL(IKZ)<<endl;
@@ -97,8 +132,13 @@ void MyModel::draw()
 	else 
 		rightLeg->reset();
 
+	isAnimationOn = ModelerUserInterface::m_controlsAnimOnMenu->value();
+ 
+	if (isAnimationOn)
+		changeAnimationAngle();
 	// draw the floor
 	/**/
+	
 	setAmbientColor(.1f, .1f, .1f);
 	setDiffuseColor(COLOR_RED);
 	
@@ -113,8 +153,7 @@ void MyModel::draw()
 		initRecurtionTree();
 		glPopMatrix();
 	}
-	
-	
+		
 	//character drawing procedure
 	setAmbientColor(.1f, .1f, .1f);
 	setDiffuseColor(COLOR_GREEN);
@@ -162,27 +201,47 @@ void MyModel::draw()
 	}
 	else {
 		glPushMatrix();
-		glRotated(-VAL(WAVE), 0, 0, 1);
+		if(isAnimationOn)
+			glRotated(angle, 1, 0, 0);
+		else
+			glRotated(-VAL(WAVE), 0, 0, 1);
 		drawUpperArm();
 		glPushMatrix();
 		glTranslated(0, -1.0, 0);
+		if (VAL(TERMINATER)) {
+			glPushMatrix();
+			glRotated(-90, 1, 0, 0);
+		}
 		drawLowerArm();
 		glPopMatrix();
 		glPopMatrix();
 		glPopMatrix();
+		if (VAL(TERMINATER))
+			glPopMatrix();
 	}
 	//left arm,no ik
 	glPushMatrix();
 	glTranslated(1.2, 0, 0);
 	glPushMatrix();
-	glRotated(VAL(WAVE), 0, 0, 1);
+	if (isAnimationOn)
+		glRotated(-angle, 1, 0, 0);
+	else
+		glRotated(VAL(WAVE), 0, 0, 1);
 	drawUpperArm();
 	glPushMatrix();
 	glTranslated(0, -1.0, 0);
+	if (VAL(TERMINATER)) {
+		glPushMatrix();
+		glRotated(-90, 1, 0, 0);
+	}
+	if(VAL(METABALL))
+		initMetaball();
 	drawLowerArm();
 	glPopMatrix();
 	glPopMatrix();
 	glPopMatrix();
+	if (VAL(TERMINATER))
+		glPopMatrix();
 
 	glPopMatrix();//upper torso related
 	glPopMatrix();
@@ -191,6 +250,22 @@ void MyModel::draw()
 	//lower torso
 	glPushMatrix();
 	glTranslated(0, 4.2, 0);// translate m1
+	if (VAL(TORUS)) {
+		setAmbientColor(.1f, .1f, .1f);
+		setDiffuseColor(COLOR_RED);
+		glPushMatrix();
+		glTranslated(0, -0.5, 0);
+		glPushMatrix();
+		glScaled(0.1, 0.1, 0.1);
+		glPushMatrix();
+		glRotated(-90, 1, 0, 0);
+		drawTorus();
+		glPopMatrix();
+		glPopMatrix();
+		glPopMatrix();
+	}
+	setAmbientColor(.1f, .1f, .1f);
+	setDiffuseColor(COLOR_GREEN);
 	drawLowerTorso();
 
 	//right leg and ik part
@@ -218,7 +293,6 @@ void MyModel::draw()
 	glPopMatrix();
 	glPopMatrix();
 
-
 	//left leg no ik
 	glPushMatrix();
 	glTranslated(0.8, 3.2, 0);
@@ -230,6 +304,8 @@ void MyModel::draw()
 	glPopMatrix();
 
 	glPopMatrix();
+	
+	
 	
 
 }
@@ -258,6 +334,20 @@ int main()
 	controls[LSYSTEMZ] = ModelerControl("L z", -5, 5, 1, -3);
 	controls[LSYSTEM] = ModelerControl("Enable L-System", 0, 1, 1, 0);
 	controls[LSYSTEMLEVEL] = ModelerControl("L-System Level", 1, 5, 1, 3);
+	controls[TORUS] = ModelerControl("Draw Torus", 0, 1, 1, 0);
+	controls[TERMINATER] = ModelerControl("Terminater", 0, 1, 1, 0);
+	controls[COMPLEX] = ModelerControl("Show School Bag", 0, 1, 1, 0);
+	controls[TURNONLIGHT] = ModelerControl("Custom Light Source", 0, 1, 1, 0);
+	controls[LIGHTX] = ModelerControl("Light X", -5, 5, 0.1f, 0);
+	controls[LIGHTY] = ModelerControl("Light Y", 0, 5, 0.1f, 0);
+	controls[LIGHTZ] = ModelerControl("Light Z", -5, 5, 0.1f, 0);
+	controls[LEVELOFDETAIL] = ModelerControl("Level of Detail", 0, 5, 1, 5);
+	controls[METABALL] = ModelerControl("Show Metaball", 0, 1, 1, 0);
+	controls[METABALLX] = ModelerControl("Metaball X", -5, 5, 0.1f, 0);
+	controls[METABALLY] = ModelerControl("Metaball Y", -5, 5, 0.1f, 0);
+	controls[METABALLZ] = ModelerControl("Metaball Z", -5, 5, 0.1f, 0);
+	controls[FRAMEALL] = ModelerControl("Frame All", 0, 1, 1, 0);
+	
 	//controls[LEGCONSTRAINT1] = ModelerControl("Constraint angle1", 45, 135, 1, 135);
 	//controls[LEGCONSTRAINT2] = ModelerControl("Constraint angle", 30, 180, 1, 30);
 
@@ -266,12 +356,13 @@ int main()
 }
 
 void MyModel::drawUpperTorso() {
+	if (VAL(LEVELOFDETAIL) >= 1) {
 
-	glPushMatrix();
-				//glTranslated(0, 3, 0);
-		//center
+		glPushMatrix();
+		//glTranslated(0, 3, 0);
+//center
 		drawSphere(0.2);
-		
+
 		//right shoulder
 		glPushMatrix();
 		glRotated(-90, 0, 1, 0);
@@ -279,6 +370,8 @@ void MyModel::drawUpperTorso() {
 		glTranslated(0, 0, 1.2);
 		drawSphere(0.2);
 		glPopMatrix();
+
+
 		//left shoulder
 		glPushMatrix();
 		glRotated(90, 0, 1, 0);
@@ -293,25 +386,60 @@ void MyModel::drawUpperTorso() {
 		drawCylinder(1.3, 0.1, 0.1);
 		glPopMatrix();
 
-	glPopMatrix();
+		glPopMatrix();
 
+		if (VAL(TERMINATER)) {
+			glPushMatrix();
+			glTranslated(1.6, 0.6, -0.5);
+			glPushMatrix();
+			glRotated(-30, 0, 0, 1);
+			glPushMatrix();
+			glRotated(-30, 1, 0, 0);
+			drawGatling();
+			glPopMatrix();
+			glPopMatrix();
+			glPopMatrix();
 
+			glPushMatrix();
+			glTranslated(-1.6, 0.6, -0.5);
+			glPushMatrix();
+			glRotated(30, 0, 0, 1);
+			glPushMatrix();
+			glRotated(-30, 1, 0, 0);
+			drawGatling();
+
+			glPopMatrix();
+			glPopMatrix();
+			glPopMatrix();
+			setDiffuseColor(COLOR_GREEN);
+		}
+
+		if (VAL(COMPLEX)) {
+			glPushMatrix();
+			glTranslated(0, -0.5, 0);
+			glPushMatrix();
+			glRotated(-90, 1, 0, 0);
+			drwaComplexShape();
+			glPopMatrix();
+			glPopMatrix();
+		}
+	}
 }
 
 void MyModel::drawLowerTorso() {
-	
-	//waist joint
-	drawSphere(0.2);
+	if (VAL(LEVELOFDETAIL) >= 2) {
+		//waist joint
+		drawSphere(0.2);
+		
+		//lower spine
+		glPushMatrix();
+		glRotated(90, 1, 0, 0);
+		drawCylinder(1.0, 0.1, 0.1);
 
-	//lower spine
-	glPushMatrix();
-	glRotated(90, 1, 0, 0);
-	drawCylinder(1.0, 0.1, 0.1);
 
-
-	glPushMatrix();
-	glTranslated(0, 0, 1.0);
-	drawSphere(0.2);
+		glPushMatrix();
+		glTranslated(0, 0, 1.0);
+		drawSphere(0.2);
 
 		glPushMatrix();
 		glRotated(90, 0, 1, 0);
@@ -327,82 +455,111 @@ void MyModel::drawLowerTorso() {
 		drawSphere(0.2);
 		glPopMatrix();
 		glPopMatrix();
+		glPopMatrix();
 
-	glPopMatrix();
+	}
 }
 
 void MyModel::drawThigh() {
-	glPushMatrix();
-	glRotated(90, 1, 0, 0);
-	drawCylinder(1.5, 0.1, 0.1);
-	glTranslated(0, 0, 1.5);
-	drawSphere(0.2);
-	glPopMatrix();
+	if (VAL(LEVELOFDETAIL) >= 3) {
+		glPushMatrix();
+		glRotated(90, 1, 0, 0);
+		drawCylinder(1.5, 0.1, 0.1);
+		glTranslated(0, 0, 1.5);
+		drawSphere(0.2);
+		glPopMatrix();
+	}
 }
 
 void MyModel::drawShank() {
 	//glPushMatrix();
 	//glTranslated(0, 3, 0);
-	glPushMatrix();
-	glRotated(90, 1, 0, 0);
-	drawCylinder(1.5, 0.1, 0.1);
-	
+	if (VAL(LEVELOFDETAIL) == 5) {
+		glPushMatrix();
+		glRotated(90, 1, 0, 0);
+		drawCylinder(1.5, 0.1, 0.1);
 
-	glPushMatrix();
-	glTranslated(0, 0, 1.5);
-	
-	drawCylinder(0.2, 0.4, 0.4);
-	glPopMatrix();
-	glPopMatrix();
-	glPopMatrix();
 
+		glPushMatrix();
+		glTranslated(0, 0, 1.5);
+
+		drawCylinder(0.2, 0.4, 0.4);
+		glPopMatrix();
+		glPopMatrix();
+
+	}
 }
 
 void MyModel::drawUpperArm() {
 	//glPushMatrix();
 	//glTranslated(0, 3, 0);
-	glPushMatrix();
-	glRotated(90, 1, 0, 0);
-	drawCylinder(1, 0.1, 0.1);
-	glPopMatrix();
+	if (VAL(LEVELOFDETAIL) >= 2) {
+		glPushMatrix();
+		glRotated(90, 1, 0, 0);
+		drawCylinder(1, 0.1, 0.1);
+		glPopMatrix();
 
-	glPushMatrix();
-	glTranslated(0, -1, 0);
-	drawSphere(0.2);
-	glPopMatrix();
+		glPushMatrix();
+		glTranslated(0, -1, 0);
+		drawSphere(0.2);
+		glPopMatrix();
+	}
 	//glPopMatrix();
 }
 
 void MyModel::drawLowerArm() {
 	//glPushMatrix();
-	//glTranslated(0, 3, 0);
-	glPushMatrix();
-	glRotated(90, 1, 0, 0);
-	drawCylinder(1, 0.1, 0.1);
-	glPopMatrix();
+	if (VAL(LEVELOFDETAIL) >= 3) {
+		//glTranslated(0, 3, 0);
+		glPushMatrix();
+		glRotated(90, 1, 0, 0);
+		drawCylinder(1, 0.1, 0.1);
+		if (VAL(TERMINATER))
+			drawHandGun();
+		glPopMatrix();
 
-	glPushMatrix();
-	glTranslated(0, -1, 0);
-	drawSphere(0.25);
-	glPopMatrix();
+		glPushMatrix();
+		glTranslated(0, -1, 0);
+		drawSphere(0.25);
+		glPopMatrix();
+	}
 	//glPopMatrix();
 }
 
 void MyModel::drawHead() {
 	//glPushMatrix();
 	//glTranslated(0, 3, 0);
+	if (VAL(LEVELOFDETAIL) >= 2) {
+		glPushMatrix();
+		glRotated(-90, 1, 0, 0);
+		drawCylinder(0.3, 0.1, 0.1);
+		glPopMatrix();
 
-	glPushMatrix();
-	glRotated(-90, 1, 0, 0);
-	drawCylinder(0.3, 0.1, 0.1);
-	glTranslated(-0.4, -0.3, 0.3);
-	drawBox(0.8, 0.6, 1.0);
+		glPushMatrix();
+		glTranslated(0.0, 0.9, -0.25);
+		drawCylinder(0.5, 0.6, 0.6);
+		initTexture();
+		glPushMatrix();
+		glTranslated(0.0, 0.0, 0.01);
+		drawCylinder(0.50, 0.59, 0.59);
+		glDisable(GL_TEXTURE_2D);
+	
+		glPopMatrix();
+
+		glPopMatrix();
+	}
+	/*glPushMatrix();
+	glTranslated(0, 0, 0.51);
+	initTexture();
+	drawTexture();
 	glPopMatrix();
-	//glPopMatrix();
+	*/
+	
+	
 }
 
 void MyModel::drawTorus() {
-	grid grid(50);
+	grid grid(30);
 	
 	float c = 7;
 	float a = 3;
@@ -428,19 +585,24 @@ void MyModel::drawTorus() {
 
 	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
 	glEnable(GL_NORMALIZE);
-	//cout << "i`m here" << endl;
+	
 	grid.drawSurface(1.0);
 
 	
 }
 
 void MyModel::initMetaball() {
-	ball ball1(0, 0, 0, 4);
-	ball ball2(5, 5, 5, 3);
+	ball ball3(0, -3, 0, 1.5);
+	ball ball1(VAL(METABALLX), VAL(METABALLY) + 0.5,VAL(METABALLZ), 2);
+	ball ball2(0,5, 0, 2 );
 	Metaball balls(40);
 	balls.addBalls(ball1);
 	balls.addBalls(ball2);
+	balls.addBalls(ball3);
+	glPushMatrix();
+	glScaled(0.2, 0.2, 0.2);
 	balls.drawMetaball();
+	glPopMatrix();
 }
 
 void MyModel::demo() {
@@ -588,4 +750,254 @@ float* MyModel::getRotateAngles(Vec3f target) {
 		result[0] = -result[0];
 	//cout << "angle:" << result[1] << endl;
 	return result;
+}
+
+void MyModel::drawGatling() {
+	
+	glPushMatrix();
+	glTranslated(0, 0, -1.75);
+
+
+	setDiffuseColor(0.2, 0.2, 0.2);
+	drawCylinder(3.91, 0.15, 0.15);
+	setDiffuseColor(0.5, 0.5, 0.5);
+	glPushMatrix();
+	
+	glTranslated(0, 0, 3.7);
+	drawCylinder(0.2, 0.55, 0.55);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0, 0, 3.3);
+	drawCylinder(0.1, 0.55, 0.55);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0, 0, 3.0);
+	drawCylinder(0.1, 0.55, 0.55);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0, 0, 1.5);
+	drawCylinder(0.5, 0.55, 0.55);
+	glPushMatrix();
+	glTranslated(0, -0.3, 0.25);
+	glPushMatrix();
+	glRotated(90, 1, 0, 0);
+	drawCylinder(0.5, 0.2, 0.2);
+	glPopMatrix();
+	glPopMatrix();
+	glPopMatrix();
+	//glPushMatrix();
+	//glTranslated(0, 0, 0.2);
+	drawCylinder(0.5, 0.55, 0.55);
+	//glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0, -0.35, 0);
+	setDiffuseColor(0.3, 0.3, 0.3);
+	drawCylinder(4, 0.1, 0.1);
+	
+	setDiffuseColor(0, 0, 0);
+	drawCylinder(4.01, 0.08, 0.08);
+	glPopMatrix();
+
+	
+	glPushMatrix();
+	glTranslated(0, 0.35, 0);
+	setDiffuseColor(0.3, 0.3, 0.3);
+	drawCylinder(4, 0.1, 0.1);
+	setDiffuseColor(0, 0, 0);
+	drawCylinder(4.01, 0.08, 0.08);
+	glPopMatrix();
+
+
+	glPushMatrix();
+	glTranslated(-0.35, 0.202, 0);
+	setDiffuseColor(0.3, 0.3, 0.3);
+	drawCylinder(4, 0.1, 0.1);
+	setDiffuseColor(0, 0, 0);
+	drawCylinder(4.01, 0.08, 0.08);
+	glPopMatrix();
+
+	
+	glPushMatrix();
+	glTranslated(-0.35, -0.202, 0);
+	setDiffuseColor(0.3, 0.3, 0.3);
+	drawCylinder(4, 0.1, 0.1);
+	setDiffuseColor(0, 0, 0);
+	drawCylinder(4.01, 0.08, 0.08);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0.35, 0.202, 0);
+	setDiffuseColor(0.3, 0.3, 0.3);
+	drawCylinder(4, 0.1, 0.1);
+	setDiffuseColor(0, 0, 0);
+	drawCylinder(4.01, 0.08, 0.08);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0.35, -0.202, 0);
+	setDiffuseColor(0.3, 0.3, 0.3);
+	drawCylinder(4, 0.1, 0.1);
+	setDiffuseColor(0, 0, 0);
+	drawCylinder(4.01, 0.08, 0.08);
+	glPopMatrix();
+	glPopMatrix();
+}
+
+void MyModel::drawHandGun() {
+
+	glPushMatrix();
+	glTranslated(0, 0, 0.5);
+	setDiffuseColor(0.2, 0.2, 0.2);
+	drawCylinder(0.5, 0.5, 0.3);
+	glPopMatrix();
+	setDiffuseColor(0.3, 0.3, 0.3);
+	glPushMatrix();
+	glTranslated(0, 0.3, 0.5);
+	drawCylinder(1, 0.1, 0.1);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(0.3, -0.15, 0.5);
+	drawCylinder(1, 0.1, 0.1);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslated(-0.3, -0.15, 0.5);
+	drawCylinder(1, 0.1, 0.1);
+	glPopMatrix();
+	setDiffuseColor(COLOR_GREEN);
+}
+
+void MyModel::drwaComplexShape() {
+	int savemode;
+	glGetIntegerv(GL_MATRIX_MODE, &savemode);
+	float angle72 = 72.0f / 180.0f * 3.1416;
+	float angle36 = 36.0f /180.0f * 3.1416;
+	Mat3f rotate72(cosf(angle72),0,-sinf(angle72),0,1,0,sinf(angle72),0,cosf(angle72));
+	Vec3f pointTop[5];
+	
+	Vec3f pointBottom[5];
+	pointBottom[0][0] = 0; pointBottom[0][1] = 0; pointBottom[0][2] = 1;
+	
+	glBegin(GL_TRIANGLES);
+	
+	
+	
+	for (int i = 1; i <= 5; i++) {
+		pointBottom[i%5] = rotate72 * pointBottom[i - 1];
+		glVertex3d(0, 0, 0);
+		glVertex3d(pointBottom[i-1][0], pointBottom[i-1][1], pointBottom[i-1][2]);
+		//cout << pointBottom[i%5][0] << "," << pointBottom[i%5][1] << "," << pointBottom[i%5][2] << endl;
+		glVertex3d(pointBottom[i%5][0], pointBottom[i%5][1], pointBottom[i%5][2]);
+	}
+
+	Mat3f rotate36(cosf(angle36), 0, -sinf(angle36), 0, 1, 0, sinf(angle36), 0, cosf(angle36));
+	pointTop[0] = rotate36 * pointBottom[0];
+	pointTop[0][1] = 1;
+	glColor3ub(0, 0, 255);
+	for (int i = 1; i <= 5; i++) {
+		pointTop[i % 5] = rotate72 * pointTop[i - 1];
+		glVertex3d(0, 1, 0);
+		glVertex3d(pointTop[i - 1][0], pointTop[i - 1][1], pointTop[i - 1][2]);
+		//cout << pointTop[i % 5][0] << "," << pointTop[i % 5][1] << "," << pointTop[i % 5][2] << endl;
+		glVertex3d(pointTop[i % 5][0], pointTop[i % 5][1], pointTop[i % 5][2]);
+	}
+	glColor3ub(255, 0, 0);
+	setDiffuseColor(COLOR_RED);
+	for (int i = 1; i <= 5; i++) {
+		glVertex3d(pointTop[i - 1][0], pointTop[i - 1][1], pointTop[i - 1][2]);
+		glVertex3d(pointTop[i % 5][0], pointTop[i % 5][1], pointTop[i % 5][2]);
+		glVertex3d(pointBottom[i % 5][0], pointBottom[i % 5][1], pointBottom[i % 5][2]);
+	}
+
+	setDiffuseColor(COLOR_BLUE);
+	for (int i = 1; i <= 5; i++) {
+		glVertex3d(pointBottom[i - 1][0], pointBottom[i - 1][1], pointBottom[i - 1][2]);
+		glVertex3d(pointBottom[i % 5][0], pointBottom[i % 5][1], pointBottom[i % 5][2]);
+		glVertex3d(pointTop[i - 1][0], pointTop[i - 1][1], pointTop[i - 1][2]);
+	}
+	glEnd();
+	
+	
+}
+
+void MyModel::changeAnimationAngle() {
+	
+	if (isAnimationOn) {
+		if (angle >= 60 || angle <= -60)
+			delta = -delta;
+		angle += delta;
+	}
+	else
+		angle = 0;
+
+}
+
+void MyModel::initTexture() {
+	
+	if (!isTextureLoaded) {
+		char* name = "./huaji.bmp";
+
+		unsigned char* temp = readBMP(name, textureWidth, textureHeight);
+		/*
+		texture = new GLubyte**[textureHeight];
+		for (int i = 0; i < textureHeight; i++) {
+			texture[i] = new GLubyte*[textureWidth];
+			for (int j = 0; j < textureWidth; j++)
+				texture[i][j] = new GLubyte[4];
+		}
+		*/
+		//cout << "width:" << textureWidth << ",height:" << textureHeight;
+		for (int row = 0; row < textureHeight; row++) {
+			for (int col = 0; col < textureWidth; col++) {
+				for (int i = 0; i < 3; i++)
+					texture[row][col][i] = temp[(row * textureWidth + col) * 3 + i];
+				//cout << "("<<texture[row][col][0] << "," << texture[row][col][1] << "," << texture[row][col][2]<<")";
+				texture[row][col][3] = 255;
+			}
+		}
+	}
+		
+	glShadeModel(GL_FLAT);
+	glEnable(GL_DEPTH_TEST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+	glGenTextures(1, &textureName);
+	glBindTexture(GL_TEXTURE_2D, textureName);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, textureWidth,textureHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE,texture);
+	glEnable(GL_TEXTURE_2D);
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
+	glBindTexture(GL_TEXTURE_2D, textureName);
+		
+}
+
+void MyModel::drawTexture() {
+	
+	
+	glBegin(GL_QUADS);
+	glTexCoord2f(0.0, 0.0); glVertex3f(0.0, 0.0, 0.0);
+	glTexCoord2f(0.0, 1.0); glVertex3f(0.0, 1.0, 0.0);
+	glTexCoord2f(1.0, 1.0); glVertex3f(1.0, 1.0, 0.0);
+	glTexCoord2f(1.0, 0.0); glVertex3f(1.0, 0.0, 0.0);
+
+
+	glEnd();
+	
+	/*
+	glBegin(GL_TRIANGLE_FAN);
+	glTexCoord2f(0.5, 0.5); glVertex3f(0.0, 0.0, 0.0);
+	glEnd();
+	glFlush();
+	*/
+	glDisable(GL_TEXTURE_2D);
+	
 }

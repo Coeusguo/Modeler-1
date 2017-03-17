@@ -1,6 +1,4 @@
-﻿  modelerui.cxx
-c:\users\com93\desktop\modeler-1\modelerui.cxx(103): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-  c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h(205): note: see declaration of 'fopen'
+﻿  camera.cpp
 bitmap.obj : warning LNK4075: ignoring '/EDITANDCONTINUE' due to '/SAFESEH' specification
 fltkd.lib(case.obj) : warning LNK4099: PDB 'fltk.pdb' was not found with 'fltkd.lib(case.obj)' or at 'C:\Users\com93\Desktop\Modeler-1\Debug\fltk.pdb'; linking object as if no debug info
 fltkd.lib(filename_absolute.obj) : warning LNK4099: PDB 'fltk.pdb' was not found with 'fltkd.lib(filename_absolute.obj)' or at 'C:\Users\com93\Desktop\Modeler-1\Debug\fltk.pdb'; linking object as if no debug info

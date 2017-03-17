@@ -3,7 +3,8 @@
 #include <gl/glu.h>
 
 #include "camera.h"
-
+#include "modelerglobals.h"
+#include "modelerui.h"
 #pragma warning(push)
 #pragma warning(disable : 4244)
 
@@ -81,18 +82,19 @@ void Camera::calculateViewingTransformParameters()
 	Mat4f originXform;
 
 	Vec3f upVector;
-
+	
+		loaded = true;
 	MakeHTrans(dollyXform, Vec3f(0,0,mDolly));
 	MakeHRotY(azimXform, mAzimuth);
 	MakeHRotX(elevXform, mElevation);
-	MakeDiagonal(twistXform, mTwist);
+	MakeDiagonal(twistXform, 1.0f);
 	MakeHTrans(originXform, mLookAt);
-	
+	cout << mDolly << endl;
 	mPosition = Vec3f(0,0,0);
 	// grouped for (mat4 * vec3) ops instead of (mat4 * mat4) ops
 	mPosition = originXform * (azimXform * (elevXform * (dollyXform * mPosition)));
 
-	if (fmod((double)mElevation, 2.0*M_PI) < 3 * M_PI / 2 && fmod((double)mElevation, 2.0*M_PI) > M_PI / 2)
+	if ( fmod((double)mElevation, 2.0*M_PI) < 3*M_PI/2 && fmod((double)mElevation, 2.0*M_PI) > M_PI/2 )
 		mUpVector = Vec3f(sin(mTwist), -cos(mTwist), 0);
 	else
 		mUpVector = Vec3f(sin(mTwist), cos(mTwist), 0);
@@ -164,9 +166,7 @@ void Camera::dragMouse( int x, int y )
 			break;
 		}
 	case kActionTwist:
-		{
-			//see case kActionZoom
-		}
+		// Not implemented
 	default:
 		break;
 	}
@@ -180,18 +180,36 @@ void Camera::releaseMouse( int x, int y )
 
 
 void Camera::applyViewingTransform() {
+	if (loaded) {
+		if (VAL(FRAMEALL)) {
+			if (mDolly > -20) {
+				mDolly = -20;
+
+			}
+			if (VAL(LSYSTEM)) {
+				int level = VAL(LSYSTEMLEVEL);
+				if (level >= 4) {
+					mDolly = -50 - (level - 4) * 40;
+				}
+				else{
+					mDolly = -20;
+				}
+			}
+			mDirtyTransform = true;
+		}
+	}
 	if( mDirtyTransform )
 		calculateViewingTransformParameters();
 
+	
 	// Place the camera at mPosition, aim the camera at
 	// mLookAt, and twist the camera such that mUpVector is up
-	
 	/*
 	gluLookAt(	mPosition[0], mPosition[1], mPosition[2],
-				mLookAt[0],   mLookAt[1],   mLookAt[2],
-				mUpVector[0], mUpVector[1], mUpVector[2]);
+	mLookAt[0],   mLookAt[1],   mLookAt[2],
+	mUpVector[0], mUpVector[1], mUpVector[2]);
 	*/
-	
+
 	lookAt(mPosition, mLookAt, mUpVector);
 }
 
@@ -212,10 +230,10 @@ void Camera::lookAt(Vec3f eye, Vec3f at, Vec3f up) {
 	newUp.normalize();
 
 	Mat4f matrix2(side[0], side[1], side[2], 0.0,
-						newUp[0], newUp[1], newUp[2], 0.0,
-						-forward[0], -forward[1], -forward[2], 0.0,
-						0.0, 0.0, 0.0, 1.0);
-	
+		newUp[0], newUp[1], newUp[2], 0.0,
+		-forward[0], -forward[1], -forward[2], 0.0,
+		0.0, 0.0, 0.0, 1.0);
+
 	matrix2.getGLMatrix(matrix);
 	glMultMatrixf(matrix);
 	glTranslated(-eye[0], -eye[1], -eye[2]);
