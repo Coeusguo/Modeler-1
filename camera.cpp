@@ -89,7 +89,7 @@ void Camera::calculateViewingTransformParameters()
 	MakeHRotX(elevXform, mElevation);
 	MakeDiagonal(twistXform, 1.0f);
 	MakeHTrans(originXform, mLookAt);
-	cout << mDolly << endl;
+
 	mPosition = Vec3f(0,0,0);
 	// grouped for (mat4 * vec3) ops instead of (mat4 * mat4) ops
 	mPosition = originXform * (azimXform * (elevXform * (dollyXform * mPosition)));
@@ -182,9 +182,9 @@ void Camera::releaseMouse( int x, int y )
 void Camera::applyViewingTransform() {
 	if (loaded) {
 		if (VAL(FRAMEALL)) {
-			if (mDolly > -20) {
-				mDolly = -20;
-
+			mLookAt = Vec3f(VAL(XPOS), VAL(YPOS), VAL(ZPOS));
+			if (mDolly > -30) {
+				mDolly = -30;
 			}
 			if (VAL(LSYSTEM)) {
 				int level = VAL(LSYSTEMLEVEL);
@@ -192,7 +192,7 @@ void Camera::applyViewingTransform() {
 					mDolly = -50 - (level - 4) * 40;
 				}
 				else{
-					mDolly = -20;
+					mDolly = -30;
 				}
 			}
 			mDirtyTransform = true;
